@@ -1,0 +1,55 @@
+version = 0.1
+
+# `sam deploy --guided` sobrescribe este archivo con lo que respondas.
+# Los valores de aqui son solo defaults comodos para el entorno dev.
+
+[default.global.parameters]
+stack_name = "localizador-objetos-dev"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.local_start_api.parameters]
+env_vars = "env.json"
+warm_containers = "EAGER"
+
+[default.local_invoke.parameters]
+env_vars = "env.json"
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+parameter_overrides = "Entorno=\"dev\" NivelLog=\"INFO\" OrigenCorsPermitido=\"*\" EndpointIoT=\"\""
+# CloudFormation propaga esta etiqueta a Lambdas, tablas y API al crearlas.
+# Las politicas IAM del equipo restringen por ella (Practica 02, paso 04).
+tags = "Equipo=\"ForaneosTeam\""
+
+[default.sync.parameters]
+watch = true
+
+# ---------------------------------------------------------------------------
+# Produccion:  sam deploy --config-env prod
+# Antes de usarlo, cambia OrigenCorsPermitido por el dominio real de la app
+# (esquema + host, sin barra final). La regla CorsExactoEnProduccion de la
+# plantilla rechaza el despliegue si se queda en "*".
+# Entorno=prod activa la retencion de tablas y del user pool, y el
+# Point-in-Time Recovery de DynamoDB.
+# ---------------------------------------------------------------------------
+[prod.global.parameters]
+stack_name = "localizador-objetos-prod"
+
+[prod.build.parameters]
+cached = true
+parallel = true
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+parameter_overrides = "Entorno=\"prod\" NivelLog=\"WARNING\" OrigenCorsPermitido=\"https://CAMBIAR-por-el-dominio-de-la-app\" EndpointIoT=\"\""
+tags = "Equipo=\"ForaneosTeam\""

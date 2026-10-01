@@ -1,0 +1,16 @@
+{
+  "resource": "/objetos",
+  "path": "/objetos",
+  "httpMethod": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "queryStringParameters": null,
+  "pathParameters": null,
+  "body": "{\"object_id\":\"obj-demo-001\",\"nombre\":\"Taladro percutor\",\"categoria\":\"herramientas\",\"almacen_id\":\"almacen-01\",\"pasillo\":\"A\",\"anaquel\":\"3\",\"nivel\":\"2\",\"posicion_led\":42,\"color_indicador\":\"#00FF00\"}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "resourcePath": "/objetos",
+    "httpMethod": "POST",
+    "requestId": "evento-local-crear-objeto",
+    "stage": "dev"
+  }
+}

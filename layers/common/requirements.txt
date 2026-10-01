@@ -1,0 +1,3 @@
+# Sin dependencias externas a proposito.
+# boto3 y botocore ya vienen incluidos en el runtime python3.12 de Lambda, asi
+# que empaquetarlos solo engordaria el artefacto y el arranque en frio.

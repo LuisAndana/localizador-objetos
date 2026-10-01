@@ -1,0 +1,16 @@
+{
+  "resource": "/objetos/{object_id}",
+  "path": "/objetos/obj-demo-001",
+  "httpMethod": "PUT",
+  "headers": { "Content-Type": "application/json" },
+  "queryStringParameters": null,
+  "pathParameters": { "object_id": "obj-demo-001" },
+  "body": "{\"pasillo\":\"B\",\"anaquel\":\"1\",\"nivel\":\"4\",\"posicion_led\":117}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "resourcePath": "/objetos/{object_id}",
+    "httpMethod": "PUT",
+    "requestId": "evento-local-actualizar-objeto",
+    "stage": "dev"
+  }
+}

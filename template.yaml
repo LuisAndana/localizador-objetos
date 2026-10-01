@@ -1,0 +1,1077 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Localizador inteligente de objetos en almacen.
+  API Gateway + Cognito + Lambda (Python 3.12) + DynamoDB + IoT Core (MQTT hacia nodos ESP32)
+  + S3 y Rekognition para identificar objetos por foto.
+
+# ---------------------------------------------------------------------------
+# Parametros
+# ---------------------------------------------------------------------------
+Parameters:
+  Entorno:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Entorno de despliegue. Da nombre al stage de la API.
+
+  EndpointIoT:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[a-z0-9][a-z0-9.\\-]{4,254}$"
+    Description: >
+      Host del endpoint de datos de AWS IoT, SIN https://
+      Obtenlo con: aws iot describe-endpoint --endpoint-type iot:Data-ATS
+      Si lo dejas vacio, la funcion de localizar corre en modo simulacion.
+
+  OrigenCorsPermitido:
+    Type: String
+    Default: "*"
+    # Un origen es esquema + host (+ puerto), sin ruta ni barra final: asi lo
+    # compara el navegador. "https://app.com/" no coincidiria nunca.
+    AllowedPattern: "^\\*$|^https?://[A-Za-z0-9.\\-]+(:[0-9]{1,5})?$"
+    ConstraintDescription: >
+      Debe ser "*" o un origen exacto como https://app.midominio.com, sin ruta
+      ni barra final.
+    Description: >
+      Origen permitido por CORS. En prod pon el dominio exacto de la app
+      cliente (ej. https://app.midominio.com), nunca "*". La regla
+      CorsExactoEnProduccion impide desplegar prod con "*".
+
+  NivelLog:
+    Type: String
+    Default: INFO
+    AllowedValues: [DEBUG, INFO, WARNING, ERROR]
+
+  NombreIndiceCategoria:
+    Type: String
+    Default: categoria-index
+    Description: Nombre del GSI sobre 'categoria' en la tabla de objetos.
+
+  DuracionLedDefecto:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 300
+    Description: Segundos que permanece encendido el LED si el cliente no lo indica.
+
+Conditions:
+  EsProduccion: !Equals [!Ref Entorno, prod]
+  SinEndpointIoT: !Equals [!Ref EndpointIoT, ""]
+
+# CloudFormation evalua estas reglas antes de crear nada: un despliegue de prod
+# con CORS abierto se rechaza en vez de quedar publicado por descuido.
+Rules:
+  CorsExactoEnProduccion:
+    RuleCondition: !Equals [!Ref Entorno, prod]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref OrigenCorsPermitido, "*"]]
+        AssertDescription: >
+          En prod, OrigenCorsPermitido debe ser el dominio exacto de la app
+          (ej. https://app.midominio.com), nunca "*".
+
+# ---------------------------------------------------------------------------
+# Configuracion comun a todas las funciones
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    Handler: app.lambda_handler
+    Timeout: 10
+    MemorySize: 256
+    Tracing: Active
+    Layers:
+      - !Ref CapaComun
+    Environment:
+      Variables:
+        LOG_LEVEL: !Ref NivelLog
+        CORS_ALLOW_ORIGIN: !Ref OrigenCorsPermitido
+        POWERTOOLS_SERVICE_NAME: localizador-objetos
+        # API Gateway valida el token de Cognito; las Lambdas leen el grupo.
+        AUTENTICACION_ACTIVA: "true"
+  Api:
+    TracingEnabled: true
+    OpenApiVersion: "3.0.1"
+
+Resources:
+  # -------------------------------------------------------------------------
+  # Capa de datos
+  # -------------------------------------------------------------------------
+  TablaObjetos:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [EsProduccion, Retain, Delete]
+    UpdateReplacePolicy: !If [EsProduccion, Retain, Delete]
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Objetos"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: object_id
+          AttributeType: S
+        - AttributeName: categoria
+          AttributeType: S
+        - AttributeName: nombre
+          AttributeType: S
+      KeySchema:
+        - AttributeName: object_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        # Permite listar por categoria con Query (coste O(resultados)) en vez
+        # de un Scan sobre toda la tabla. Ordenado por nombre para la UI.
+        - IndexName: !Ref NombreIndiceCategoria
+          KeySchema:
+            - AttributeName: categoria
+              KeyType: HASH
+            - AttributeName: nombre
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EsProduccion, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  TablaCategorias:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [EsProduccion, Retain, Delete]
+    UpdateReplacePolicy: !If [EsProduccion, Retain, Delete]
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Categorias"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: categoria_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: categoria_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EsProduccion, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  # Historial de entradas y salidas. Particion por objeto y orden por
+  # clave_orden (marca de tiempo con microsegundos + id del movimiento), para
+  # leer el historial de un objeto con Query y sin empates de ordenamiento.
+  TablaMovimientos:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [EsProduccion, Retain, Delete]
+    UpdateReplacePolicy: !If [EsProduccion, Retain, Delete]
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Movimientos"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: object_id
+          AttributeType: S
+        - AttributeName: clave_orden
+          AttributeType: S
+      KeySchema:
+        - AttributeName: object_id
+          KeyType: HASH
+        - AttributeName: clave_orden
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EsProduccion, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  # Cronometro de cada localizacion: de aqui sale el indicador de tiempo del
+  # acta. El GSI permite encontrar la busqueda abierta de un objeto sin recorrer
+  # la tabla cuando se registra su salida.
+  TablaBusquedas:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: !If [EsProduccion, Retain, Delete]
+    UpdateReplacePolicy: !If [EsProduccion, Retain, Delete]
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Busquedas"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: busqueda_id
+          AttributeType: S
+        - AttributeName: object_id
+          AttributeType: S
+        - AttributeName: iniciada_en
+          AttributeType: S
+      KeySchema:
+        - AttributeName: busqueda_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: objeto-index
+          KeySchema:
+            - AttributeName: object_id
+              KeyType: HASH
+            - AttributeName: iniciada_en
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [EsProduccion, true, false]
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  # Solicitudes de identificacion por foto y la propuesta de Rekognition. El TTL
+  # las borra a los 30 dias, igual que la regla de ciclo de vida a sus fotos.
+  TablaIdentificaciones:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Identificaciones"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: identificacion_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: identificacion_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expira_en
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  # -------------------------------------------------------------------------
+  # Fotos para identificar objetos (S3)
+  # -------------------------------------------------------------------------
+  # El nombre se fija aqui (y no se deja que lo genere CloudFormation) para que
+  # la politica de FnIdentificarObjeto pueda escribirlo sin referenciar el
+  # bucket: si lo referenciara, bucket y funcion dependerian el uno del otro
+  # (el evento de S3 apunta a la funcion) y el despliegue fallaria por ciclo.
+  BucketFotos:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-fotos-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Privacidad acordada en la propuesta: las fotos se borran a los 30 dias.
+      LifecycleConfiguration:
+        Rules:
+          - Id: BorrarFotosA30Dias
+            Status: Enabled
+            Prefix: fotos/
+            ExpirationInDays: 30
+          - Id: LimpiarSubidasIncompletas
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      # El navegador sube la foto directo a S3 con un POST prefirmado.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST]
+            AllowedOrigins: [!Ref OrigenCorsPermitido]
+            AllowedHeaders: ["*"]
+            MaxAge: 600
+      Tags:
+        - Key: Proyecto
+          Value: localizador-objetos
+        - Key: Entorno
+          Value: !Ref Entorno
+
+  # Rechaza cualquier acceso sin TLS.
+  PoliticaBucketFotos:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BucketFotos
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SoloTLS
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt BucketFotos.Arn
+              - !Sub "${BucketFotos.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # -------------------------------------------------------------------------
+  # Usuarios (Cognito)
+  # -------------------------------------------------------------------------
+  # Sin registro abierto: es la app interna de un almacen, asi que las cuentas
+  # las crea un administrador (consola o CLI) y cada usuario cambia su
+  # contrasena temporal en el primer inicio de sesion.
+  PoolUsuarios:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: !If [EsProduccion, Retain, Delete]
+    UpdateReplacePolicy: !If [EsProduccion, Retain, Delete]
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-usuarios"
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 10
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      MfaConfiguration: "OFF"
+      UserPoolTags:
+        Proyecto: localizador-objetos
+        Entorno: !Ref Entorno
+
+  # Cliente publico (la app web no puede guardar un secreto). USER_PASSWORD_AUTH
+  # manda la contrasena a Cognito por TLS; los tokens duran una hora y el
+  # de renovacion siete dias, para no pedir la contrasena en cada turno.
+  ClienteAppUsuarios:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${AWS::StackName}-app"
+      UserPoolId: !Ref PoolUsuarios
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  # Borrar objetos y gestionar categorias exige este grupo (ver autorizacion.py).
+  GrupoAdministradores:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: administradores
+      UserPoolId: !Ref PoolUsuarios
+      Description: Puede eliminar objetos y gestionar categorias.
+
+  GrupoOperadores:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: operadores
+      UserPoolId: !Ref PoolUsuarios
+      Description: Busca, localiza, registra objetos y mueve material.
+
+  # -------------------------------------------------------------------------
+  # Nodos ESP32 (IoT Core)
+  # -------------------------------------------------------------------------
+  # Se adjunta al certificado de cada nodo. El nombre del Thing debe ser el
+  # almacen_id (ej. "almacen-01"): asi la politica deja al nodo conectarse con
+  # ese clientId y escuchar solo el topic de su almacen. Un nodo comprometido
+  # no puede leer ni encender los LEDs de otro almacen, ni publicar nada.
+  PoliticaNodoAlmacen:
+    Type: AWS::IoT::Policy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-nodo-almacen"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: iot:Connect
+            Resource: !Sub "arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:client/${!iot:Connection.Thing.ThingName}"
+          - Effect: Allow
+            Action: iot:Subscribe
+            Resource: !Sub "arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topicfilter/almacen/${!iot:Connection.Thing.ThingName}/led"
+          - Effect: Allow
+            Action: iot:Receive
+            Resource: !Sub "arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topic/almacen/${!iot:Connection.Thing.ThingName}/led"
+
+  # -------------------------------------------------------------------------
+  # Codigo compartido (dominio, repositorios, validacion, respuestas)
+  # -------------------------------------------------------------------------
+  CapaComun:
+    Type: AWS::Serverless::LayerVersion
+    Metadata:
+      BuildMethod: python3.12
+      BuildArchitecture: arm64
+    Properties:
+      LayerName: !Sub "${AWS::StackName}-comun"
+      Description: Dominio, repositorios y utilidades HTTP del localizador.
+      ContentUri: layers/common/
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [arm64]
+      RetentionPolicy: Delete
+
+  # -------------------------------------------------------------------------
+  # API
+  # -------------------------------------------------------------------------
+  ApiLocalizador:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      StageName: !Ref Entorno
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: !Sub "'${OrigenCorsPermitido}'"
+        MaxAge: "'600'"
+      # Toda ruta exige un token valido de Cognito. La peticion previa de CORS
+      # (OPTIONS) no lleva token, asi que queda fuera del autorizador.
+      Auth:
+        DefaultAuthorizer: AutorizadorCognito
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          AutorizadorCognito:
+            UserPoolArn: !GetAtt PoolUsuarios.Arn
+            Identity:
+              Header: Authorization
+      MethodSettings:
+        # Freno de mano: evita que un cliente en bucle sature DynamoDB o
+        # bombardee de ordenes MQTT a los nodos ESP32.
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 50
+          ThrottlingRateLimit: 25
+          LoggingLevel: ERROR
+          DataTraceEnabled: false
+          MetricsEnabled: true
+      # Sin estas dos, los errores que genera API Gateway (404 de ruta, 429,
+      # 502) llegarian al navegador sin cabeceras CORS y el fetch fallaria
+      # con un error de red opaco en vez del codigo real.
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${OrigenCorsPermitido}'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: !Sub "'${OrigenCorsPermitido}'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+      Tags:
+        Proyecto: localizador-objetos
+        Entorno: !Ref Entorno
+
+  # -------------------------------------------------------------------------
+  # Funciones Lambda (una por endpoint)
+  # -------------------------------------------------------------------------
+  FnListarObjetos:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-listar-objetos"
+      Description: GET /objetos - lista objetos, filtrables por categoria y buscables por nombre (q).
+      CodeUri: src/listar_objetos/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+          INDICE_CATEGORIA: !Ref NombreIndiceCategoria
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub "${TablaObjetos.Arn}/index/${NombreIndiceCategoria}"
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaObjetos.Arn
+      Events:
+        Listar:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos
+            Method: GET
+
+  FnObtenerObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-obtener-objeto"
+      Description: GET /objetos/{object_id} - detalle de un objeto.
+      CodeUri: src/obtener_objeto/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt TablaObjetos.Arn
+      Events:
+        Obtener:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos/{object_id}
+            Method: GET
+
+  FnCrearObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-crear-objeto"
+      Description: POST /objetos - registra un objeto nuevo.
+      CodeUri: src/crear_objeto/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+      Policies:
+        - Statement:
+            # Sin GetItem: la unicidad se garantiza con ConditionExpression,
+            # no leyendo antes de escribir. El Scan es para comprobar que la
+            # posicion LED este libre en el almacen (ServicioObjetos).
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:Scan
+              Resource: !GetAtt TablaObjetos.Arn
+            # Solo para rechazar una categoria que no exista.
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        Crear:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos
+            Method: POST
+
+  FnActualizarObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-actualizar-objeto"
+      Description: PUT /objetos/{object_id} - actualiza la ubicacion de un objeto.
+      CodeUri: src/actualizar_objeto/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+      Policies:
+        - Statement:
+            # GetItem y Scan: si el cambio mueve el LED, se lee el objeto y se
+            # comprueba que la nueva posicion este libre en el almacen.
+            - Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+                - dynamodb:GetItem
+                - dynamodb:Scan
+              Resource: !GetAtt TablaObjetos.Arn
+            # Solo para rechazar una categoria que no exista.
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        Actualizar:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos/{object_id}
+            Method: PUT
+
+  FnLocalizarObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-localizar-objeto"
+      Description: >
+        POST /objetos/{object_id}/localizar - busca el objeto y publica la
+        orden MQTT que enciende su LED en el nodo ESP32 del almacen.
+      CodeUri: src/localizar_objeto/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+          TABLA_BUSQUEDAS: !Ref TablaBusquedas
+          IOT_ENDPOINT: !Ref EndpointIoT
+          IOT_MODO_SIMULACION: !If [SinEndpointIoT, "true", "false"]
+          DURACION_LED_DEFECTO: !Ref DuracionLedDefecto
+          DURACION_LED_MAXIMA: "300"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt TablaObjetos.Arn
+            # Abre el cronometro de la busqueda al ordenar el encendido.
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt TablaBusquedas.Arn
+            # Acotado al patron de topic del proyecto: esta funcion no puede
+            # publicar en ningun otro topic de la cuenta.
+            - Effect: Allow
+              Action: iot:Publish
+              Resource: !Sub "arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topic/almacen/*/led"
+      Events:
+        Localizar:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos/{object_id}/localizar
+            Method: POST
+
+  FnEliminarObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-eliminar-objeto"
+      Description: DELETE /objetos/{object_id} - elimina un objeto sin existencias (solo administradores).
+      CodeUri: src/eliminar_objeto/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+      Policies:
+        - Statement:
+            # DeleteItem condicionado a cantidad = 0; GetItem solo para explicar
+            # el rechazo (404 o 409).
+            - Effect: Allow
+              Action:
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+              Resource: !GetAtt TablaObjetos.Arn
+      Events:
+        Eliminar:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /objetos/{object_id}
+            Method: DELETE
+
+  FnCrearCategoria:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-crear-categoria"
+      Description: POST /categorias - da de alta una categoria (solo administradores).
+      CodeUri: src/crear_categoria/
+      Environment:
+        Variables:
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        CrearCategoria:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /categorias
+            Method: POST
+
+  FnActualizarCategoria:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-actualizar-categoria"
+      Description: PUT /categorias/{categoria_id} - cambia nombre o descripcion (solo administradores).
+      CodeUri: src/actualizar_categoria/
+      Environment:
+        Variables:
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        ActualizarCategoria:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /categorias/{categoria_id}
+            Method: PUT
+
+  FnEliminarCategoria:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-eliminar-categoria"
+      Description: DELETE /categorias/{categoria_id} - elimina una categoria sin objetos (solo administradores).
+      CodeUri: src/eliminar_categoria/
+      Environment:
+        Variables:
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+          TABLA_OBJETOS: !Ref TablaObjetos
+          INDICE_CATEGORIA: !Ref NombreIndiceCategoria
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:DeleteItem
+              Resource: !GetAtt TablaCategorias.Arn
+            # Comprueba que ningun objeto use la categoria (Query con Limit 1).
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub "${TablaObjetos.Arn}/index/${NombreIndiceCategoria}"
+      Events:
+        EliminarCategoria:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /categorias/{categoria_id}
+            Method: DELETE
+
+  FnSolicitarIdentificacion:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-solicitar-identificacion"
+      Description: POST /identificaciones - crea la solicitud y la URL prefirmada para subir la foto.
+      CodeUri: src/solicitar_identificacion/
+      Environment:
+        Variables:
+          TABLA_IDENTIFICACIONES: !Ref TablaIdentificaciones
+          BUCKET_FOTOS: !Ref BucketFotos
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt TablaIdentificaciones.Arn
+            # La URL prefirmada se firma con este rol: el navegador sube con
+            # este permiso, acotado al prefijo de fotos.
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${BucketFotos.Arn}/fotos/*"
+      Events:
+        Solicitar:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /identificaciones
+            Method: POST
+
+  FnObtenerIdentificacion:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-obtener-identificacion"
+      Description: GET /identificaciones/{identificacion_id} - estado y propuesta de la IA.
+      CodeUri: src/obtener_identificacion/
+      Environment:
+        Variables:
+          TABLA_IDENTIFICACIONES: !Ref TablaIdentificaciones
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt TablaIdentificaciones.Arn
+      Events:
+        Obtener:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /identificaciones/{identificacion_id}
+            Method: GET
+
+  FnIdentificarObjeto:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-identificar-objeto"
+      Description: >
+        Evento de S3 - analiza la foto con Rekognition (DetectLabels + DetectText)
+        y guarda una propuesta de alta. Solo propone: no escribe objetos.
+      CodeUri: src/identificar_objeto/
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLA_IDENTIFICACIONES: !Ref TablaIdentificaciones
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+          BUCKET_FOTOS: !Sub "${AWS::StackName}-fotos-${AWS::AccountId}"
+      Policies:
+        - Statement:
+            # Rekognition lee la foto de S3 con los permisos de quien lo llama.
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${AWS::StackName}-fotos-${AWS::AccountId}/fotos/*"
+            # Rekognition no admite permisos por recurso para estas acciones.
+            - Effect: Allow
+              Action:
+                - rekognition:DetectLabels
+                - rekognition:DetectText
+              Resource: "*"
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt TablaIdentificaciones.Arn
+            # Para proponer solo categorias que existan.
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        FotoSubida:
+          Type: S3
+          Properties:
+            Bucket: !Ref BucketFotos
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: fotos/
+                  - Name: suffix
+                    Value: .jpg
+
+  FnListarCategorias:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-listar-categorias"
+      Description: GET /categorias - lista el catalogo de categorias.
+      CodeUri: src/listar_categorias/
+      Environment:
+        Variables:
+          TABLA_CATEGORIAS: !Ref TablaCategorias
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaCategorias.Arn
+      Events:
+        ListarCategorias:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /categorias
+            Method: GET
+
+  FnRegistrarMovimiento:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-registrar-movimiento"
+      Description: POST /movimientos - registra una entrada o salida y ajusta la cantidad.
+      CodeUri: src/registrar_movimiento/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+          TABLA_MOVIMIENTOS: !Ref TablaMovimientos
+          TABLA_BUSQUEDAS: !Ref TablaBusquedas
+      Policies:
+        - Statement:
+            # El ajuste de cantidad y el historial se escriben con
+            # TransactWriteItems: la transaccion necesita las dos tablas.
+            - Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+                - dynamodb:GetItem
+              Resource: !GetAtt TablaObjetos.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt TablaMovimientos.Arn
+            # Una salida cierra la busqueda abierta del objeto.
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt TablaBusquedas.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub "${TablaBusquedas.Arn}/index/objeto-index"
+      Events:
+        RegistrarMovimiento:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /movimientos
+            Method: POST
+
+  FnListarMovimientos:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-listar-movimientos"
+      Description: GET /movimientos?object_id={id} - historial de un objeto.
+      CodeUri: src/listar_movimientos/
+      Environment:
+        Variables:
+          TABLA_MOVIMIENTOS: !Ref TablaMovimientos
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !GetAtt TablaMovimientos.Arn
+      Events:
+        ListarMovimientos:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /movimientos
+            Method: GET
+
+  FnRegistrarBusqueda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-registrar-busqueda"
+      Description: POST /busquedas - registra una medicion manual de referencia.
+      CodeUri: src/registrar_busqueda/
+      Environment:
+        Variables:
+          TABLA_BUSQUEDAS: !Ref TablaBusquedas
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt TablaBusquedas.Arn
+      Events:
+        RegistrarBusqueda:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /busquedas
+            Method: POST
+
+  FnConfirmarBusqueda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-confirmar-busqueda"
+      Description: POST /busquedas/{busqueda_id}/confirmar - detiene el cronometro.
+      CodeUri: src/confirmar_busqueda/
+      Environment:
+        Variables:
+          TABLA_BUSQUEDAS: !Ref TablaBusquedas
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt TablaBusquedas.Arn
+      Events:
+        ConfirmarBusqueda:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /busquedas/{busqueda_id}/confirmar
+            Method: POST
+
+  FnObtenerMetricas:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-obtener-metricas"
+      Description: GET /metricas/localizacion - indicador de tiempo, manual contra sistema.
+      CodeUri: src/obtener_metricas/
+      Environment:
+        Variables:
+          TABLA_BUSQUEDAS: !Ref TablaBusquedas
+      Policies:
+        - Statement:
+            # El resumen recorre las busquedas del semestre: son cientos, no millones.
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaBusquedas.Arn
+      Events:
+        ObtenerMetricas:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /metricas/localizacion
+            Method: GET
+
+  FnListarAlmacenes:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-listar-almacenes"
+      Description: GET /almacenes - almacenes con objetos, para elegir en el mapa.
+      CodeUri: src/listar_almacenes/
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+      Policies:
+        - Statement:
+            # Scan proyectado (almacen_id y pasillo): no hay clave por almacen y
+            # el conteo necesita recorrer la tabla. Ver PROYECCION_PLANO.
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaObjetos.Arn
+      Events:
+        ListarAlmacenes:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /almacenes
+            Method: GET
+
+  FnObtenerPlano:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-obtener-plano"
+      Description: >
+        GET /almacenes/{almacen_id}/plano - pasillos, anaqueles y niveles del
+        almacen con los objetos de cada nivel (mapa 2D).
+      CodeUri: src/obtener_plano/
+      MemorySize: 512
+      Environment:
+        Variables:
+          TABLA_OBJETOS: !Ref TablaObjetos
+      Policies:
+        - Statement:
+            # El mapa se dibuja entero: se recorre el almacen completo con un
+            # filtro por almacen_id, no una pagina.
+            - Effect: Allow
+              Action: dynamodb:Scan
+              Resource: !GetAtt TablaObjetos.Arn
+      Events:
+        ObtenerPlano:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiLocalizador
+            Path: /almacenes/{almacen_id}/plano
+            Method: GET
+
+# ---------------------------------------------------------------------------
+# Salidas
+# ---------------------------------------------------------------------------
+Outputs:
+  UrlApi:
+    Description: URL base de la API. Configurala en la app cliente.
+    Value: !Sub "https://${ApiLocalizador}.execute-api.${AWS::Region}.amazonaws.com/${Entorno}"
+    Export:
+      Name: !Sub "${AWS::StackName}-UrlApi"
+
+  NombreTablaObjetos:
+    Description: Tabla DynamoDB de objetos.
+    Value: !Ref TablaObjetos
+
+  NombreTablaCategorias:
+    Description: Tabla DynamoDB de categorias.
+    Value: !Ref TablaCategorias
+
+  IdPoolUsuarios:
+    Description: Id del user pool de Cognito. Ahi se crean los usuarios.
+    Value: !Ref PoolUsuarios
+
+  IdClienteApp:
+    Description: Client id de Cognito para la app (VITE_COGNITO_CLIENT_ID).
+    Value: !Ref ClienteAppUsuarios
+
+  RegionCognito:
+    Description: Region del user pool (VITE_COGNITO_REGION).
+    Value: !Ref AWS::Region
+
+  PoliticaIoTNodos:
+    Description: Politica IoT que se adjunta al certificado de cada nodo ESP32.
+    Value: !Ref PoliticaNodoAlmacen
+
+  BucketFotosIdentificacion:
+    Description: Bucket de las fotos a identificar (se borran a los 30 dias).
+    Value: !Ref BucketFotos
+
+  TopicMqttLed:
+    Description: Patron de topic MQTT al que deben suscribirse los nodos ESP32.
+    Value: almacen/{almacen_id}/led
+
+  ModoSimulacionIoT:
+    Description: Si es true, no se publica nada real en IoT Core.
+    Value: !If [SinEndpointIoT, "true", "false"]

@@ -1,0 +1,185 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.21 0.006 285.9);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.006 285.9);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.006 285.9);
+
+  /* PLACEHOLDER: sustituir por la Paleta SL Group */
+  --primary: oklch(0.55 0.2 260);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.967 0.001 286.4);
+  --secondary-foreground: oklch(0.21 0.006 285.9);
+  --muted: oklch(0.967 0.001 286.4);
+  --muted-foreground: oklch(0.552 0.016 285.9);
+  --accent: oklch(0.967 0.001 286.4);
+  --accent-foreground: oklch(0.21 0.006 285.9);
+
+  --destructive: oklch(0.577 0.245 27.3);
+  --success: oklch(0.6 0.15 150);
+  --warning: oklch(0.75 0.16 75);
+  --info: oklch(0.6 0.13 240);
+
+  --border: oklch(0.92 0.004 286.3);
+  --input: oklch(0.92 0.004 286.3);
+  --ring: oklch(0.55 0.2 260);
+}
+
+.dark {
+  --background: oklch(0.16 0.005 285.8);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.9);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.9);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.65 0.18 260);
+  --primary-foreground: oklch(0.16 0.005 285.8);
+  --secondary: oklch(0.274 0.006 286);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286);
+  --muted-foreground: oklch(0.705 0.015 286.1);
+  --accent: oklch(0.274 0.006 286);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.2);
+  --success: oklch(0.7 0.15 150);
+  --warning: oklch(0.8 0.15 75);
+  --info: oklch(0.7 0.12 240);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.65 0.18 260);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-ring; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Superficie de la tira LED: simula el PCB del nodo, oscura en ambos temas. */
+:root {
+  --tira: oklch(0.22 0.006 285.8);
+  --tira-texto: oklch(0.72 0.01 286);
+  --led-apagado: oklch(0.34 0.006 286);
+}
+.dark {
+  --tira: oklch(0.12 0.004 285.8);
+  --tira-texto: oklch(0.62 0.01 286);
+  --led-apagado: oklch(0.27 0.006 286);
+}
+@theme inline {
+  --color-tira: var(--tira);
+  --color-tira-texto: var(--tira-texto);
+  --color-led-apagado: var(--led-apagado);
+}
+
+/* Plano del almacén: el piso también es oscuro en los dos temas, por la misma razón
+   que la tira. Así el LED encendido es lo único saturado de la pantalla. */
+:root {
+  --piso: oklch(0.24 0.008 268);
+  --piso-marca: oklch(0.36 0.014 268);
+  --pasillo: oklch(0.29 0.011 268);
+  --anaquel: oklch(0.35 0.013 268);
+  --anaquel-borde: oklch(0.46 0.017 268);
+  --anaquel-texto: oklch(0.88 0.008 268);
+  --anaquel-apagado: oklch(0.44 0.014 268);
+}
+.dark {
+  --piso: oklch(0.14 0.006 268);
+  --piso-marca: oklch(0.26 0.01 268);
+  --pasillo: oklch(0.19 0.008 268);
+  --anaquel: oklch(0.25 0.011 268);
+  --anaquel-borde: oklch(0.36 0.015 268);
+  --anaquel-texto: oklch(0.84 0.008 268);
+  --anaquel-apagado: oklch(0.34 0.012 268);
+}
+@theme inline {
+  --color-piso: var(--piso);
+  --color-piso-marca: var(--piso-marca);
+  --color-pasillo: var(--pasillo);
+  --color-anaquel: var(--anaquel);
+  --color-anaquel-borde: var(--anaquel-borde);
+  --color-anaquel-texto: var(--anaquel-texto);
+  --color-anaquel-apagado: var(--anaquel-apagado);
+}
+
+/* Impresión: la hoja de etiquetas sale sola, sin el armazón de la app. */
+@media print {
+  .no-imprimir {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .hoja-etiquetas {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .hoja-etiquetas article {
+    break-inside: avoid;
+  }
+  /* En tema oscuro las etiquetas saldrían en negro: para el papel siempre van claras. */
+  .hoja-etiquetas,
+  .hoja-etiquetas * {
+    background: #fff !important;
+    color: #000 !important;
+    print-color-adjust: exact;
+  }
+  .hoja-etiquetas article {
+    border: 1px solid #999 !important;
+  }
+}

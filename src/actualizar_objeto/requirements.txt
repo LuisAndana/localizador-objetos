@@ -1,0 +1,2 @@
+# Sin dependencias externas: boto3/botocore ya vienen en el runtime python3.12.
+# La logica compartida se inyecta via la Lambda Layer "localizador-common".

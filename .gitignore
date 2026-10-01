@@ -1,0 +1,45 @@
+# Artefactos de build de SAM
+.aws-sam/
+packaged.yaml
+samconfig-*.toml
+
+# Configuracion local con valores reales (endpoints, credenciales)
+env.json
+.env
+*.local.json
+
+# Modo local: base SQLite regenerable
+datos_local/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Credenciales: nunca deben entrar al repositorio
+.aws/
+*.pem
+*.key
+*.crt
+certs/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Otro proyecto (tarea de IA) que vive en esta carpeta pero no es parte del localizador
+Sistema Multiagente Inteligente para Gestión de Emergencias(Teoria)/
+
+# Ajustes locales de Claude Code
+.claude/settings.local.json

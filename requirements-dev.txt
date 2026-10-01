@@ -1,0 +1,6 @@
+# Dependencias solo de desarrollo local (tests y scripts).
+# Las Lambdas NO las necesitan: boto3 viene en el runtime de AWS.
+-r requirements-local.txt
+boto3>=1.34
+pytest>=8.0
+httpx>=0.27

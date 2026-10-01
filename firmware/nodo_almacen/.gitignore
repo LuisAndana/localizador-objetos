@@ -1,0 +1,6 @@
+# Lleva la clave privada del nodo y la contrasena del Wi-Fi: nunca se sube.
+include/config.h
+
+# Artefactos de PlatformIO
+.pio/
+.vscode/

@@ -1,0 +1,16 @@
+{
+  "resource": "/objetos",
+  "path": "/objetos",
+  "httpMethod": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "queryStringParameters": null,
+  "pathParameters": null,
+  "body": "{\"nombre\":\"Sin categoria ni ubicacion\",\"posicion_led\":-5,\"almacen_id\":\"almacen-01/#\"}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "resourcePath": "/objetos",
+    "httpMethod": "POST",
+    "requestId": "evento-local-crear-objeto-invalido",
+    "stage": "dev"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "resource": "/objetos/{object_id}/localizar",
+  "path": "/objetos/obj-demo-001/localizar",
+  "httpMethod": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "queryStringParameters": null,
+  "pathParameters": { "object_id": "obj-demo-001" },
+  "body": "{\"duracion_segundos\":15}",
+  "isBase64Encoded": false,
+  "requestContext": {
+    "resourcePath": "/objetos/{object_id}/localizar",
+    "httpMethod": "POST",
+    "requestId": "evento-local-localizar-objeto",
+    "stage": "dev"
+  }
+}
