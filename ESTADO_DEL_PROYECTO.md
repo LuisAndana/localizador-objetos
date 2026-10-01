@@ -280,13 +280,8 @@ Ver la [sección 6](#6-configurar-aws-cuando-este-lista-la-cuenta). Es el siguie
 ### 🎨 Diseño y organización
 - [ ] **Paleta SL Group.** Los colores actuales son provisionales (`frontend/src/styles/index.css`).
 - [ ] **Vault de Obsidian.** Obsidian está instalado pero el vault con los estándares no está en esta máquina.
-- [ ] **Control de versiones.** El proyecto **no está en git**. Recomendado:
-
-  ```bash
-  git init
-  ```
-
-  El `.gitignore` ya excluye `.venv`, `node_modules`, `dist`, `datos_local` y `env.json`; el del firmware excluye `config.h`, que lleva la clave privada del nodo.
+- [x] **Control de versiones.** Repositorio git en la rama `main` (2026-09-30). El `.gitignore` excluye `.venv`, `node_modules`, `dist`, `datos_local`, `env.json`, el `config.h` del firmware (lleva la clave privada del nodo) y la carpeta de la tarea de IA, que es otro proyecto.
+- [ ] **Repositorio remoto.** Falta subirlo a GitHub (privado) para compartirlo con el equipo.
 - [ ] **CI**: correr `pytest`, `tsc` y `sam validate --lint` en cada cambio.
 
 ---
