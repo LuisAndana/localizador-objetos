@@ -289,7 +289,7 @@ Ver la [sección 6](#6-configurar-aws-cuando-este-lista-la-cuenta). Es el siguie
 - [ ] **Paleta SL Group.** Los colores actuales son provisionales (`frontend/src/styles/index.css`).
 - [ ] **Vault de Obsidian.** Obsidian está instalado pero el vault con los estándares no está en esta máquina.
 - [x] **Control de versiones.** Repositorio git en la rama `main` (2026-09-30). El `.gitignore` excluye `.venv`, `node_modules`, `dist`, `datos_local`, `env.json`, el `config.h` del firmware (lleva la clave privada del nodo) y la carpeta de la tarea de IA, que es otro proyecto.
-- [ ] **Repositorio remoto.** Falta subirlo a GitHub (privado) para compartirlo con el equipo.
+- [x] **Repositorio remoto** (2026-10-05): https://github.com/LuisAndana/localizador-objetos (privado). Para compartirlo con el equipo: *Settings → Collaborators* en GitHub.
 - [ ] **CI**: correr `pytest`, `tsc` y `sam validate --lint` en cada cambio.
 
 ---
