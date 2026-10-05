@@ -281,6 +281,7 @@ export default function DetallePage() {
     ["Pasillo", objeto.pasillo],
     ["Anaquel", objeto.anaquel],
     ["Nivel", objeto.nivel],
+    ["Columna", objeto.columna],
   ];
 
   const encender = () =>
@@ -329,7 +330,7 @@ export default function DetallePage() {
       <div className="grid gap-4 md:grid-cols-5">
         <section className="rounded-xl border bg-card p-5 shadow-xs md:col-span-3">
           <h2 className="text-lg font-semibold">Ubicación</h2>
-          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
             {ubicacion.map(([etiqueta, valor]) => (
               <div key={etiqueta} className="min-w-0 rounded-lg bg-muted/60 p-3">
                 <dt className="text-xs font-medium text-muted-foreground">{etiqueta}</dt>
@@ -418,7 +419,7 @@ export default function DetallePage() {
             Busca la luz en{" "}
             <strong className="font-medium text-foreground">
               pasillo {ultima.respuesta.ubicacion.pasillo}, anaquel {ultima.respuesta.ubicacion.anaquel}, nivel{" "}
-              {ultima.respuesta.ubicacion.nivel}
+              {ultima.respuesta.ubicacion.nivel}, columna {ultima.respuesta.ubicacion.columna}
             </strong>{" "}
             de {ultima.respuesta.ubicacion.almacen_id}. Orden publicada en{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{ultima.respuesta.topic}</code>.

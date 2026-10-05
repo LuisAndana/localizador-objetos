@@ -4,7 +4,7 @@ import type { AnaquelPlano, PasilloPlano, Plano } from "../tipos";
 
 export type Seleccion = { pasillo: string; anaquel: string };
 
-/** El LED encendido que cae dentro de este nivel, si lo hay. */
+/** El LED encendido que cae dentro de este grupo de objetos, si lo hay. */
 function ledDelNivel(objetos: { posicion_led: number }[], encendidos: Map<number, LedEncendido>) {
   for (const objeto of objetos) {
     const led = encendidos.get(objeto.posicion_led);
@@ -60,28 +60,37 @@ function BloqueAnaquel({
         <span className="text-[10px] text-anaquel-texto/60 tabular">{anaquel.total_objetos}</span>
       </span>
 
-      {/* Una barra por nivel: la que tiene el LED encendido se ilumina con su color. */}
+      {/* La cuadrícula del anaquel en miniatura: una fila por nivel y un hueco por
+          columna. El hueco con el LED encendido se ilumina con su color. */}
       <span className="mt-2 grid gap-1">
-        {niveles.map((nivel) => {
-          const led = ledDelNivel(nivel.objetos, encendidos);
-          return (
-            <span
-              key={nivel.nivel}
-              className={cn(
-                "block h-1.5 rounded-full transition-colors duration-300",
-                led ? "animate-pulse" : nivel.objetos.length > 0 ? "bg-anaquel-texto/55" : "bg-anaquel-apagado",
-              )}
-              style={
-                led
-                  ? {
-                      backgroundColor: led.color_indicador,
-                      boxShadow: `0 0 8px 1px ${led.color_indicador}`,
-                    }
-                  : undefined
-              }
-            />
-          );
-        })}
+        {niveles.map((nivel) => (
+          <span
+            key={nivel.nivel}
+            className="grid gap-0.5"
+            style={{ gridTemplateColumns: `repeat(${anaquel.columnas.length}, minmax(0, 1fr))` }}
+          >
+            {nivel.celdas.map((celda) => {
+              const led = ledDelNivel(celda.objetos, encendidos);
+              return (
+                <span
+                  key={celda.columna}
+                  className={cn(
+                    "block h-1.5 rounded-sm transition-colors duration-300",
+                    led ? "animate-pulse" : celda.objetos.length > 0 ? "bg-anaquel-texto/55" : "bg-anaquel-apagado",
+                  )}
+                  style={
+                    led
+                      ? {
+                          backgroundColor: led.color_indicador,
+                          boxShadow: `0 0 8px 1px ${led.color_indicador}`,
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
+          </span>
+        ))}
       </span>
     </button>
   );

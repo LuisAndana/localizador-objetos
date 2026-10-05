@@ -89,24 +89,29 @@ function Formulario({ objeto, categorias }: { objeto?: Objeto; categorias: Categ
   } = useForm<ObjetoFormulario>({
     resolver: zodResolver(objetoSchema),
     mode: "onTouched",
-    defaultValues: objeto ? { ...objeto, object_id: "" } : { object_id: "", categoria: "", color_indicador: "#00FF00" },
+    defaultValues: objeto
+      ? { ...objeto, object_id: "" }
+      : { object_id: "", categoria: "", columna: "A", color_indicador: "#00FF00" },
   });
 
-  const [posicion, color, almacenElegido, pasilloElegido, anaquelElegido, nivelElegido] = useWatch({
+  const [posicion, color, almacenElegido, pasilloElegido, anaquelElegido, nivelElegido, columnaElegida] = useWatch({
     control,
-    name: ["posicion_led", "color_indicador", "almacen_id", "pasillo", "anaquel", "nivel"],
+    name: ["posicion_led", "color_indicador", "almacen_id", "pasillo", "anaquel", "nivel", "columna"],
   });
 
   const almacenes = useAlmacenes();
   const plano = usePlano(almacenElegido?.trim() || undefined);
   const pasillos = plano.data?.pasillos ?? [];
   const anaqueles = pasillos.find((p) => p.pasillo === pasilloElegido?.trim())?.anaqueles ?? [];
-  const niveles = anaqueles.find((a) => a.anaquel === anaquelElegido?.trim())?.niveles ?? [];
+  const anaquelActual = anaqueles.find((a) => a.anaquel === anaquelElegido?.trim());
+  const niveles = anaquelActual?.niveles ?? [];
 
   const almacenesConocidos = almacenes.data?.map((a) => a.almacen_id) ?? [];
   const opcionesPasillo = pasillos.map((p) => p.pasillo);
   const opcionesAnaquel = anaqueles.map((a) => a.anaquel);
   const opcionesNivel = niveles.map((n) => n.nivel);
+  // Las columnas del anaquel elegido (incluidas las vacías); en un anaquel nuevo, A-C.
+  const opcionesColumna = anaquelActual?.columnas ?? ["A", "B", "C"];
 
   // Las posiciones que ya usa otro objeto de este almacen.
   const ocupadas = new Map<number, PosicionOcupada>();
@@ -117,7 +122,7 @@ function Formulario({ objeto, categorias }: { objeto?: Objeto; categorias: Categ
           if (o.object_id !== objeto?.object_id)
             ocupadas.set(o.posicion_led, { nombre: o.nombre, color_indicador: o.color_indicador });
 
-  const escribir = (campo: "almacen_id" | "pasillo" | "anaquel" | "nivel", valor: string) =>
+  const escribir = (campo: "almacen_id" | "pasillo" | "anaquel" | "nivel" | "columna", valor: string) =>
     setValue(campo, valor, { shouldValidate: true, shouldDirty: true });
   const colorVista = REGEX_COLOR.test(color ?? "") ? color : "#00FF00";
   const posicionVista = Number.isInteger(posicion) && posicion >= 0 ? posicion : null;
@@ -134,6 +139,7 @@ function Formulario({ objeto, categorias }: { objeto?: Objeto; categorias: Categ
       pasillo: datos.pasillo,
       anaquel: datos.anaquel,
       nivel: datos.nivel,
+      columna: datos.columna,
       posicion_led: datos.posicion_led,
       color_indicador: datos.color_indicador.toUpperCase(),
     };
@@ -281,6 +287,29 @@ function Formulario({ objeto, categorias }: { objeto?: Objeto; categorias: Categ
               opciones={opcionesNivel}
               valor={nivelElegido}
               onElegir={(v) => escribir("nivel", v)}
+            />
+          </Campo>
+          <Campo
+            id="columna"
+            etiqueta="Columna"
+            error={errors.columna?.message}
+            ayuda="El hueco de la repisa, de izquierda a derecha (A, B, C…)."
+          >
+            <Input
+              id="columna"
+              autoComplete="off"
+              maxLength={3}
+              className="uppercase sm:max-w-32"
+              aria-invalid={!!errors.columna}
+              {...register("columna", {
+                onBlur: (e) => escribir("columna", e.target.value.trim().toUpperCase()),
+              })}
+            />
+            <ChipsSugerencia
+              etiqueta="Columnas de este anaquel"
+              opciones={opcionesColumna}
+              valor={columnaElegida}
+              onElegir={(v) => escribir("columna", v)}
             />
           </Campo>
         </div>

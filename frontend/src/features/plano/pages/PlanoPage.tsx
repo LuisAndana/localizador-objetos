@@ -92,7 +92,7 @@ export default function PlanoPage() {
     <div className="grid gap-6">
       <PageHeader
         titulo="Mapa del almacén"
-        descripcion="El almacén visto desde arriba: pasillos, anaqueles y lo que guarda cada nivel. Busca un objeto y su LED se enciende en el anaquel donde está."
+        descripcion="El almacén visto desde arriba: pasillos, anaqueles y lo que guarda cada hueco (nivel y columna). Busca un objeto y su LED se enciende en el anaquel donde está."
       />
 
       <div
@@ -138,7 +138,7 @@ export default function PlanoPage() {
         <EmptyState
           icono={PackageSearch}
           titulo="Este almacén está vacío"
-          descripcion="Registra un objeto con su pasillo, anaquel y nivel para que aparezca en el mapa."
+          descripcion="Registra un objeto con su pasillo, anaquel, nivel y columna para que aparezca en el mapa."
           accion={
             <Link to="/objetos/nuevo" className={buttonVariants()}>
               Registrar objeto
@@ -166,7 +166,8 @@ export default function PlanoPage() {
                 <MapPinned className="size-4 shrink-0 text-primary" aria-hidden />
                 <span className="min-w-0">
                   <strong className="font-semibold">{ubicacion.objeto.nombre}</strong> está en pasillo{" "}
-                  {ubicacion.pasillo}, anaquel {ubicacion.anaquel}, nivel {ubicacion.nivel}
+                  {ubicacion.pasillo}, anaquel {ubicacion.anaquel}, nivel {ubicacion.nivel}, columna{" "}
+                  {ubicacion.columna}
                 </span>
               </p>
               <div className="flex shrink-0 items-center gap-3">
@@ -223,7 +224,7 @@ export default function PlanoPage() {
             </details>
           )}
 
-          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_440px]">
             <PlantaAlmacen
               plano={plano.data}
               seleccion={seleccionEfectiva}

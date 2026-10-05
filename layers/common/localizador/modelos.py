@@ -28,11 +28,12 @@ class Ubicacion:
     anaquel: str
     nivel: str
     posicion_led: int
+    columna: str = "A"
 
     def descripcion(self) -> str:
         return (
             f"Almacen {self.almacen_id}, pasillo {self.pasillo}, "
-            f"anaquel {self.anaquel}, nivel {self.nivel}"
+            f"anaquel {self.anaquel}, nivel {self.nivel}, columna {self.columna}"
         )
 
 
@@ -57,6 +58,7 @@ class Objeto:
                 anaquel=item["anaquel"],
                 nivel=item["nivel"],
                 posicion_led=int(item["posicion_led"]),
+                columna=item.get("columna") or "A",
             ),
             color_indicador=item["color_indicador"],
             ultima_actualizacion=item.get("ultima_actualizacion", ""),
@@ -71,6 +73,7 @@ class Objeto:
             "pasillo": self.ubicacion.pasillo,
             "anaquel": self.ubicacion.anaquel,
             "nivel": self.ubicacion.nivel,
+            "columna": self.ubicacion.columna,
             "posicion_led": self.ubicacion.posicion_led,
             "color_indicador": self.color_indicador,
             "ultima_actualizacion": self.ultima_actualizacion,

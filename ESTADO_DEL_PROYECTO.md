@@ -1,6 +1,6 @@
 # Localizador inteligente de objetos: estado del proyecto
 
-> Última actualización: 2026-09-30
+> Última actualización: 2026-10-05
 > **Situación actual:** el proyecto funciona completo **en local, sin AWS**. Cuando la cuenta de AWS esté lista, se despliega el mismo código siguiendo la [sección 6](#6-configurar-aws-cuando-este-lista-la-cuenta).
 
 ---
@@ -178,7 +178,7 @@ Y abre http://localhost:5173. Cuando termines, `npm run build` (dentro de `front
 
 | Pantalla | Ruta | Qué hace |
 |---|---|---|
-| Mapa | `/` | **Pantalla de inicio.** El almacén visto desde arriba: filas de anaqueles separadas por sus pasillos, con buscador propio. Al elegir un objeto se abre el alzado de su anaquel (niveles y tira LED de cada uno) y **se enciende su LED en el plano**, con cuenta regresiva. Trae plegado el simulador del nodo. Llegando desde un objeto (`?objeto=`) su anaquel aparece abierto y resaltado |
+| Mapa | `/` | **Pantalla de inicio.** El almacén visto desde arriba: filas de anaqueles separadas por sus pasillos, con buscador propio. Al elegir un objeto se abre el alzado de su anaquel como una **estantería real: niveles (filas) × columnas**, con los huecos libres y la tira LED de cada repisa, y **se enciende su LED en el plano**, con cuenta regresiva. Trae plegado el simulador del nodo. Llegando desde un objeto (`?objeto=`) su anaquel aparece abierto y resaltado |
 | Objetos | `/objetos` | Lista con filtro por categoría y "cargar más". Al escribir en el buscador se trae **todo el catálogo**, no solo la página cargada. En escritorio es una tabla; en móvil, tarjetas |
 | Detalle | `/objetos/:id` | Ubicación (almacén, pasillo, anaquel, nivel) y botón **Localizar** con tiempo configurable; muestra la tira LED con cuenta regresiva, y el panel de **entradas y salidas** con las existencias y su historial |
 | Registrar | `/objetos/nuevo` | Alta con validación en vivo. La ubicación sugiere los almacenes, pasillos, anaqueles y niveles **que ya existen** (y admite nuevos), y la posición del LED se elige tocándola en la tira: las ocupadas no se pueden pulsar. Código opcional (si no se da, se genera) |
@@ -196,8 +196,16 @@ Y abre http://localhost:5173. Cuando termines, `npm run build` (dentro de `front
   - Navegación inferior en el teléfono.
   - Accesibilidad (etiquetas, foco visible, `aria-live` en el resultado de localizar).
 - [x] Validación en el cliente con **las mismas reglas** que el backend.
-- [x] **Navegación de cuatro destinos** (Mapa, Objetos, Registrar, Métricas), que son las tres
-  tareas reales más el indicador. Categorías se alcanza desde la lista y el simulador desde el mapa.
+- [x] **Navegación de cinco destinos** (Mapa, Objetos, Categorías, Registrar, Métricas). Categorías
+  quedó fija en la barra para llegar a ella sin pasar por la lista de objetos.
+- [x] **Columnas en los anaqueles**: cada objeto se ubica en nivel **y columna** (dato `columna`,
+  opcional en la API; por defecto "A"). El mapa dibuja la cuadrícula completa con al menos tres
+  columnas, y las bases viejas se migran solas repartiendo los objetos por el orden de su LED.
+- [x] **Búsqueda por voz**: botón de micrófono dentro de los buscadores de Objetos y del Mapa. Usa el
+  reconocimiento de voz del navegador (Web Speech API, es-MX) y quita muletillas ("¿dónde está el…?").
+  En el mapa, si lo dicho coincide con un solo objeto, se enciende su LED directo. Funciona en
+  Chrome, Edge y Safari, y solo en `https` o `localhost` (el navegador lo exige para el micrófono);
+  en Firefox el botón no aparece.
 
 ### Herramientas y entorno
 - [x] Instalados: AWS CLI 2.36, SAM CLI 1.166, Obsidian 1.13 y dependencias Python en `.venv`.
@@ -392,7 +400,7 @@ prueba localizador de objetos/
 ├── samconfig.toml · env.json.example
 ├── events/                      # Eventos de prueba para sam local invoke
 ├── scripts/bootstrap_local.py   # Tablas y datos en DynamoDB Local
-├── tests/                       # 155 pruebas (pytest)
+├── tests/                       # 173 pruebas (pytest)
 ├── frontend/                    # App React
 │   └── src/features/            #   objetos/ · categorias/ · plano/ · auth/ · identificacion/ · simulador/
 ├── firmware/nodo_almacen/       # Firmware del ESP32 (PlatformIO): MQTT + tira WS2812B

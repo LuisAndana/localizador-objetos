@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { AlertCircle, Loader2, PackageSearch, Plus, Printer, Search, Tags } from "lucide-react";
+import { AlertCircle, Loader2, PackageSearch, Plus, Printer, Search } from "lucide-react";
 import { cn } from "cn";
 import { Button, buttonVariants } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -9,6 +9,8 @@ import { EmptyState } from "@/shared/components/EmptyState";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { PuntoColor } from "@/shared/components/PuntoColor";
 import { ResponsiveList, type Columna } from "@/shared/components/ResponsiveList";
+import { BotonMicrofono } from "@/shared/components/BotonMicrofono";
+import { useBusquedaPorVoz } from "@/shared/hooks/useBusquedaPorVoz";
 import { useDebounced } from "@/shared/hooks/useDebounced";
 import { nombreDeCategoria, useCategorias } from "@/features/categorias/api";
 import { useObjetos } from "../api";
@@ -28,6 +30,7 @@ export default function BuscarPage() {
   const categoria = params.get("categoria") ?? undefined;
   const [filtro, setFiltro] = useState("");
   const texto = useDebounced(filtro.trim());
+  const voz = useBusquedaPorVoz({ alEscuchar: setFiltro, alTerminar: setFiltro });
 
   const categorias = useCategorias();
   // El servidor busca en todo el catálogo (sin acentos ni mayúsculas), no solo
@@ -61,7 +64,7 @@ export default function BuscarPage() {
     {
       clave: "ubicacion",
       titulo: "Ubicación",
-      celda: (o) => `Pasillo ${o.pasillo} · Anaq. ${o.anaquel} · Niv. ${o.nivel}`,
+      celda: (o) => `Pasillo ${o.pasillo} · Anaq. ${o.anaquel} · Niv. ${o.nivel} · Col. ${o.columna}`,
     },
     {
       clave: "cantidad",
@@ -118,14 +121,6 @@ export default function BuscarPage() {
                   {c.nombre}
                 </button>
               ))}
-          {/* Categorías salió de la navegación principal: se entra desde aquí. */}
-          <Link
-            to="/categorias"
-            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline md:h-9"
-          >
-            <Tags className="size-4" aria-hidden />
-            Ver por categoría
-          </Link>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -136,14 +131,21 @@ export default function BuscarPage() {
             />
             <Input
               type="search"
-              placeholder="Buscar por nombre o código…"
+              placeholder={voz.escuchando ? "Escuchando… di el nombre del objeto" : "Buscar por nombre o código…"}
               aria-label="Buscar por nombre o código"
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
-              className="pl-9"
+              className={cn("pl-9", voz.soportado && "pr-12 md:pr-10")}
             />
+            {voz.soportado && (
+              <BotonMicrofono escuchando={voz.escuchando} onIniciar={voz.iniciar} onDetener={voz.detener} />
+            )}
           </div>
-          {!cargando && !fallo && (
+          {voz.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {voz.error}
+            </p>
+          ) : !cargando && !fallo && (
             <p className="text-sm text-muted-foreground tabular">
               {visibles.length} {visibles.length === 1 ? "objeto" : "objetos"}
               {consulta.hasNextPage && " en pantalla"}

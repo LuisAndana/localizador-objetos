@@ -4,6 +4,7 @@ import { z } from "zod";
 // error antes de enviar, pero el backend sigue siendo quien decide.
 const REGEX_IDENTIFICADOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 export const REGEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+const REGEX_COLUMNA = /^[A-Za-z0-9]{1,3}$/;
 
 const identificador = (campo: string) =>
   z
@@ -23,6 +24,12 @@ export const objetoSchema = z.object({
   pasillo: textoUbicacion("El pasillo"),
   anaquel: textoUbicacion("El anaquel"),
   nivel: textoUbicacion("El nivel"),
+  columna: z
+    .string()
+    .trim()
+    .min(1, "La columna es obligatoria")
+    .regex(REGEX_COLUMNA, "Una letra o un número (ej. A, B, 12)")
+    .transform((v) => v.toUpperCase()),
   posicion_led: z
     .number({ error: "Indica la posición del LED" })
     .int("Debe ser un número entero")

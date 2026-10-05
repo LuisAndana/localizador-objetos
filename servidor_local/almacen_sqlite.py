@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS objetos (
     pasillo              TEXT NOT NULL,
     anaquel              TEXT NOT NULL,
     nivel                TEXT NOT NULL,
+    columna              TEXT NOT NULL DEFAULT 'A',
     posicion_led         INTEGER NOT NULL,
     color_indicador      TEXT NOT NULL,
     cantidad             INTEGER NOT NULL DEFAULT 0,
@@ -96,6 +97,7 @@ COLUMNAS_OBJETO = (
     "pasillo",
     "anaquel",
     "nivel",
+    "columna",
     "posicion_led",
     "color_indicador",
     "cantidad",
@@ -153,6 +155,27 @@ class BaseLocal:
         if "cantidad" not in columnas:
             con.execute("ALTER TABLE objetos ADD COLUMN cantidad INTEGER NOT NULL DEFAULT 0")
             logger.info("Base local migrada: columna 'cantidad' agregada a objetos.")
+        if "columna" not in columnas:
+            con.execute("ALTER TABLE objetos ADD COLUMN columna TEXT NOT NULL DEFAULT 'A'")
+            BaseLocal._repartir_columnas(con)
+            logger.info("Base local migrada: los objetos se acomodaron en columnas del anaquel.")
+
+    @staticmethod
+    def _repartir_columnas(con: sqlite3.Connection) -> None:
+        """Los objetos que compartian nivel se reparten en columnas A, B, C... por
+        el orden de su LED, que es como corre la tira de izquierda a derecha.
+        Sin esto, al migrar quedarian todos amontonados en la columna A."""
+        filas = con.execute(
+            """SELECT object_id, almacen_id, pasillo, anaquel, nivel FROM objetos
+               ORDER BY almacen_id, pasillo, anaquel, nivel, posicion_led"""
+        ).fetchall()
+        lugar_anterior, indice = None, 0
+        for fila in filas:
+            lugar = (fila["almacen_id"], fila["pasillo"], fila["anaquel"], fila["nivel"])
+            indice = indice + 1 if lugar == lugar_anterior else 0
+            lugar_anterior = lugar
+            columna = chr(ord("A") + indice) if indice < 26 else str(indice + 1)
+            con.execute("UPDATE objetos SET columna = ? WHERE object_id = ?", (columna, fila["object_id"]))
 
     def inicializar(self, con_semilla: bool = True) -> None:
         with self.conexion() as con:
@@ -290,7 +313,7 @@ class RepositorioObjetosSqlite:
     def listar_por_almacen(self, almacen_id: str) -> list[dict]:
         with self._base.conexion() as con:
             filas = con.execute(
-                "SELECT * FROM objetos WHERE almacen_id = ? ORDER BY pasillo, anaquel, nivel",
+                "SELECT * FROM objetos WHERE almacen_id = ? ORDER BY pasillo, anaquel, nivel, columna",
                 (almacen_id,),
             ).fetchall()
         return [dict(f) for f in filas]

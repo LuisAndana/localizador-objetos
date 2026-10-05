@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/shared/components/ui/input";
 import { PuntoColor } from "@/shared/components/PuntoColor";
+import { BotonMicrofono } from "@/shared/components/BotonMicrofono";
+import { useBusquedaPorVoz } from "@/shared/hooks/useBusquedaPorVoz";
 import { useDebounced } from "@/shared/hooks/useDebounced";
+import { normalizar } from "@/shared/lib/texto";
 import type { Plano, UbicacionDeObjeto } from "../tipos";
 
 const MAXIMO_RESULTADOS = 6;
@@ -17,6 +20,7 @@ function aplanar(plano: Plano): UbicacionDeObjeto[] {
           pasillo: pasillo.pasillo,
           anaquel: anaquel.anaquel,
           nivel: nivel.nivel,
+          columna: objeto.columna,
         })),
       ),
     ),
@@ -31,24 +35,37 @@ export function BuscadorEnPlano({
   onElegir: (ubicacion: UbicacionDeObjeto) => void;
 }) {
   const [texto, setTexto] = useState("");
-  const consulta = useDebounced(texto.trim().toLowerCase(), 200);
+  const consulta = useDebounced(normalizar(texto), 200);
   const objetos = useMemo(() => aplanar(plano), [plano]);
 
-  const resultados = useMemo(() => {
-    if (consulta === "") return [];
-    return objetos
-      .filter(
-        (u) =>
-          u.objeto.nombre.toLowerCase().includes(consulta) ||
-          u.objeto.categoria.toLowerCase().includes(consulta),
-      )
-      .slice(0, MAXIMO_RESULTADOS);
-  }, [objetos, consulta]);
+  // Sin acentos ni mayúsculas: el dictado devuelve "multímetro" y el catálogo
+  // puede decir "Multimetro", o al revés.
+  const buscar = (termino: string) =>
+    termino === ""
+      ? []
+      : objetos
+          .filter(
+            (u) => normalizar(u.objeto.nombre).includes(termino) || normalizar(u.objeto.categoria).includes(termino),
+          )
+          .slice(0, MAXIMO_RESULTADOS);
+
+  const resultados = buscar(consulta);
 
   const elegir = (ubicacion: UbicacionDeObjeto) => {
     setTexto("");
     onElegir(ubicacion);
   };
+
+  // Por voz: si lo dicho coincide con un solo objeto, se elige (y se enciende su
+  // LED) sin tener que tocar nada más. Si hay varios, quedan en la lista.
+  const voz = useBusquedaPorVoz({
+    alEscuchar: setTexto,
+    alTerminar: (dicho) => {
+      setTexto(dicho);
+      const coincidencias = buscar(normalizar(dicho));
+      if (coincidencias.length === 1) elegir(coincidencias[0]);
+    },
+  });
 
   return (
     <div className="grid gap-2">
@@ -64,11 +81,26 @@ export function BuscadorEnPlano({
           onKeyDown={(e) => {
             if (e.key === "Enter" && resultados[0]) elegir(resultados[0]);
           }}
-          placeholder="Nombre o categoría: taladro, herramienta…"
+          placeholder={
+            voz.escuchando ? "Escuchando… di el nombre del objeto" : "Nombre o categoría: taladro, herramienta…"
+          }
           autoComplete="off"
-          className="h-11 pl-9"
+          className={voz.soportado ? "h-11 pr-12 pl-9" : "h-11 pl-9"}
         />
+        {voz.soportado && (
+          <BotonMicrofono
+            escuchando={voz.escuchando}
+            onIniciar={voz.iniciar}
+            onDetener={voz.detener}
+            className="md:size-8"
+          />
+        )}
       </div>
+      {voz.error && (
+        <p role="alert" className="text-sm text-destructive">
+          {voz.error}
+        </p>
+      )}
 
       {consulta !== "" && (
         <ul aria-live="polite" className="grid gap-1.5">
@@ -87,7 +119,7 @@ export function BuscadorEnPlano({
                   <PuntoColor color={u.objeto.color_indicador} />
                   <span className="min-w-0 flex-1 truncate font-medium">{u.objeto.nombre}</span>
                   <span className="shrink-0 text-xs text-muted-foreground tabular">
-                    {u.pasillo}-{u.anaquel} · N{u.nivel} · LED {u.objeto.posicion_led}
+                    {u.pasillo}-{u.anaquel} · N{u.nivel} · C{u.columna} · LED {u.objeto.posicion_led}
                   </span>
                 </button>
               </li>

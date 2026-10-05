@@ -53,7 +53,7 @@ function Etiqueta({ objeto }: { objeto: Objeto }) {
           {objeto.nombre}
         </p>
         <p className="mt-1 text-sm">
-          Pasillo {objeto.pasillo} · Anaquel {objeto.anaquel} · Nivel {objeto.nivel}
+          Pasillo {objeto.pasillo} · Anaquel {objeto.anaquel} · Nivel {objeto.nivel} · Columna {objeto.columna}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {objeto.almacen_id} · <span className="font-mono">{objeto.object_id}</span>

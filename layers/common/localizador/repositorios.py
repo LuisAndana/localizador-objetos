@@ -235,7 +235,7 @@ class RepositorioObjetos:
     # las paginas del scan, con un tope para que una tabla grande no agote el
     # tiempo de la funcion. Se proyectan solo los campos que el mapa usa.
     PROYECCION_PLANO = (
-        "object_id, nombre, categoria, almacen_id, pasillo, anaquel, nivel, "
+        "object_id, nombre, categoria, almacen_id, pasillo, anaquel, nivel, columna, "
         "posicion_led, color_indicador"
     )
     MAXIMO_PAGINAS_PLANO = 20

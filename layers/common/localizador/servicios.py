@@ -261,6 +261,7 @@ class ServicioLocalizacion:
                 "pasillo": objeto.ubicacion.pasillo,
                 "anaquel": objeto.ubicacion.anaquel,
                 "nivel": objeto.ubicacion.nivel,
+                "columna": objeto.ubicacion.columna,
                 "descripcion": objeto.ubicacion.descripcion(),
             },
             "orden_led": orden.a_payload(),

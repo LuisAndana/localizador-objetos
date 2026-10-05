@@ -17,12 +17,15 @@ from .modelos import ORIGENES_MOVIMIENTO, TIPOS_MOVIMIENTO
 
 REGEX_IDENTIFICADOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$")
 REGEX_COLOR_HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+# Columna del anaquel: una letra o un numero corto, como esta rotulado ("A", "B", "12").
+REGEX_COLUMNA = re.compile(r"^[A-Za-z0-9]{1,3}$")
+COLUMNA_POR_DEFECTO = "A"
 
 LONGITUD_MAXIMA_CUERPO = 16 * 1024
 COLOR_POR_DEFECTO = "#00FF00"
 
 CAMPOS_UBICACION = ("almacen_id", "pasillo", "anaquel", "nivel", "posicion_led")
-CAMPOS_ACTUALIZABLES = CAMPOS_UBICACION + ("nombre", "categoria", "color_indicador", "cantidad")
+CAMPOS_ACTUALIZABLES = CAMPOS_UBICACION + ("columna", "nombre", "categoria", "color_indicador", "cantidad")
 
 CANTIDAD_MAXIMA = 100_000
 CANTIDAD_MAXIMA_MOVIMIENTO = 10_000
@@ -110,6 +113,12 @@ def entero(valor: Any, campo: str, minimo: int, maximo: int) -> int:
     return valor
 
 
+def columna(valor: Any) -> str:
+    if not isinstance(valor, str) or not REGEX_COLUMNA.match(valor.strip()):
+        raise ErrorValidacion("'columna' debe ser una letra o un numero de 1 a 3 caracteres (ej. A, B, 12).")
+    return valor.strip().upper()
+
+
 def color_hex(valor: Any, campo: str = "color_indicador") -> str:
     if not isinstance(valor, str) or not REGEX_COLOR_HEX.match(valor.strip()):
         raise ErrorValidacion(f"'{campo}' debe tener el formato #RRGGBB.")
@@ -125,6 +134,8 @@ def _validar_campo(campo: str, valor: Any) -> Any:
         return identificador(valor, "almacen_id")
     if campo in ("pasillo", "anaquel", "nivel"):
         return texto(valor, campo, maximo=30)
+    if campo == "columna":
+        return columna(valor)
     if campo == "posicion_led":
         return entero(valor, "posicion_led", minimo=0, maximo=65535)
     if campo == "color_indicador":
@@ -144,6 +155,8 @@ def objeto_nuevo(datos: dict) -> dict:
         )
 
     limpio = {campo: _validar_campo(campo, datos[campo]) for campo in obligatorios}
+    # Opcional para no romper a quien ya registraba sin columna: va a la primera.
+    limpio["columna"] = columna(datos["columna"]) if "columna" in datos else COLUMNA_POR_DEFECTO
     limpio["color_indicador"] = (
         color_hex(datos["color_indicador"])
         if "color_indicador" in datos

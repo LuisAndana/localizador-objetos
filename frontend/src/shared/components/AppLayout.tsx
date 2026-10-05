@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Gauge, Lightbulb, LogOut, MapPinned, Moon, PlusCircle, Search, Sun, type LucideIcon } from "lucide-react";
+import { Gauge, Lightbulb, LogOut, MapPinned, Moon, PlusCircle, Search, Sun, Tags, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 import { AUTENTICACION_ACTIVA, cerrarSesion } from "@/core/auth/cognito";
 import { useUsuario } from "@/core/auth/useSesion";
@@ -11,11 +11,12 @@ import InicioSesionPage from "@/features/auth/InicioSesionPage";
 
 type Enlace = { to: string; etiqueta: string; icono: LucideIcon; exacto?: boolean };
 
-// Tres tareas reales (encontrar, dar de alta, ver como va) y nada mas.
-// Categorias se alcanza desde la lista de objetos; el simulador, desde el mapa.
+// Las tareas reales (encontrar, organizar, dar de alta, ver como va). El
+// simulador se alcanza desde el mapa.
 const NAVEGACION: Enlace[] = [
   { to: "/", etiqueta: "Mapa", icono: MapPinned, exacto: true },
   { to: "/objetos", etiqueta: "Objetos", icono: Search },
+  { to: "/categorias", etiqueta: "Categorías", icono: Tags },
   { to: "/objetos/nuevo", etiqueta: "Registrar", icono: PlusCircle },
   { to: "/metricas", etiqueta: "Métricas", icono: Gauge },
 ];

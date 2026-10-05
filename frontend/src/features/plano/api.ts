@@ -25,7 +25,7 @@ export function usePlano(almacenId: string | undefined) {
   });
 }
 
-/** Aplana el plano para encontrar un objeto y saber en qué nivel quedó dibujado. */
+/** Aplana el plano para encontrar un objeto y saber en qué nivel y columna quedó dibujado. */
 export function ubicarEnPlano(plano: Plano | undefined, objectId: string | null): UbicacionDeObjeto | undefined {
   if (!plano || !objectId) return undefined;
   for (const pasillo of plano.pasillos) {
@@ -33,7 +33,13 @@ export function ubicarEnPlano(plano: Plano | undefined, objectId: string | null)
       for (const nivel of anaquel.niveles) {
         const objeto = nivel.objetos.find((o) => o.object_id === objectId);
         if (objeto) {
-          return { objeto, pasillo: pasillo.pasillo, anaquel: anaquel.anaquel, nivel: nivel.nivel };
+          return {
+            objeto,
+            pasillo: pasillo.pasillo,
+            anaquel: anaquel.anaquel,
+            nivel: nivel.nivel,
+            columna: objeto.columna,
+          };
         }
       }
     }

@@ -6,6 +6,7 @@ export type Objeto = {
   pasillo: string;
   anaquel: string;
   nivel: string;
+  columna: string;
   posicion_led: number;
   color_indicador: string;
   cantidad: number;
@@ -57,6 +58,7 @@ export type RespuestaLocalizar = {
     pasillo: string;
     anaquel: string;
     nivel: string;
+    columna: string;
     descripcion: string;
   };
   orden_led: {
