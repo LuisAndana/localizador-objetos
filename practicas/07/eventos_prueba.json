@@ -1,0 +1,21 @@
+{
+  "01-insertar": {
+    "op": "insertar",
+    "objetos": [
+      {"object_id": "OBJ-0001", "nombre": "Martillo de uña 16 oz", "categoria": "herramientas", "almacen_id": "ALM-01", "pasillo": "P1", "anaquel": "A1", "nivel": "N1", "columna": "A", "posicion_led": 0, "cantidad": 8},
+      {"object_id": "OBJ-0002", "nombre": "Llave perica 10 pulgadas", "categoria": "herramientas", "almacen_id": "ALM-01", "pasillo": "P1", "anaquel": "A1", "nivel": "N2", "columna": "A", "posicion_led": 1, "cantidad": 5},
+      {"object_id": "OBJ-0003", "nombre": "Extensión eléctrica 5 m", "categoria": "electrico", "almacen_id": "ALM-01", "pasillo": "P1", "anaquel": "A2", "nivel": "N1", "columna": "B", "posicion_led": 7, "cantidad": 12},
+      {"object_id": "OBJ-0004", "nombre": "Pija para madera 1 pulgada", "categoria": "tornilleria", "almacen_id": "ALM-01", "pasillo": "P2", "anaquel": "A3", "nivel": "N1", "columna": "A", "posicion_led": 12, "cantidad": 300},
+      {"object_id": "OBJ-0005", "nombre": "Empaque para llave de agua", "categoria": "refacciones", "almacen_id": "ALM-01", "pasillo": "P2", "anaquel": "A3", "nivel": "N3", "columna": "C", "posicion_led": 15, "cantidad": 40},
+      {"object_id": "OBJ-0006", "nombre": "Cinta de aislar negra", "categoria": "electrico", "almacen_id": "ALM-01", "pasillo": "P3", "anaquel": "A5", "nivel": "N2", "columna": "A", "posicion_led": 22, "cantidad": 25},
+      {"object_id": "OBJ-0007", "nombre": "Brocha de 2 pulgadas", "categoria": "herramientas", "almacen_id": "ALM-01", "pasillo": "P3", "anaquel": "A5", "nivel": "N3", "columna": "B", "posicion_led": 23, "cantidad": 0}
+    ]
+  },
+  "02-consultar": {"op": "consultar", "object_id": "OBJ-0003"},
+  "03-plano": {"op": "plano", "almacen_id": "ALM-01"},
+  "04-actualizar": {"op": "actualizar", "object_id": "OBJ-0003", "salida": 2},
+  "05-actualizar-rechazado": {"op": "actualizar", "object_id": "OBJ-0002", "salida": 50},
+  "06-eliminar": {"op": "eliminar", "object_id": "OBJ-0007"},
+  "07-consultar-eliminado": {"op": "consultar", "object_id": "OBJ-0007"},
+  "08-buscar-sin-clave": {"op": "buscar_sin_clave", "texto": "Martillo"}
+}
