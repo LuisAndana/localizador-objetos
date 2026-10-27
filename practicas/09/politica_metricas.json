@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LeerStreamDeBusquedas",
+      "Effect": "Allow",
+      "Action": ["dynamodb:DescribeStream", "dynamodb:GetRecords", "dynamodb:GetShardIterator"],
+      "Resource": "arn:aws:dynamodb:us-east-1:772325759488:table/localizador-objetos-p09-busquedas/stream/*"
+    },
+    {
+      "Sid": "ListarStreams",
+      "Effect": "Allow",
+      "Action": "dynamodb:ListStreams",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LeerYActualizarResumen",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+      "Resource": "arn:aws:dynamodb:us-east-1:772325759488:table/localizador-objetos-p09-resumen"
+    }
+  ]
+}

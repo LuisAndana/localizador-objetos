@@ -1,0 +1,12 @@
+{
+  "consulta-get": { "requestContext": { "http": { "method": "GET" } } },
+  "busqueda-confirmada": {
+    "Records": [{
+      "eventName": "MODIFY",
+      "dynamodb": {
+        "OldImage": { "busqueda_id": {"S": "b1"}, "confirmada_en": {"S": ""} },
+        "NewImage": { "busqueda_id": {"S": "b1"}, "confirmada_en": {"S": "2026-10-26T10:00:00"}, "duracion_ms": {"N": "1500"} }
+      }
+    }]
+  }
+}
