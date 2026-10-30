@@ -25,6 +25,9 @@ venv/
 .coverage
 htmlcov/
 
+# Evidencias de las prácticas: llevan el número de la cuenta de AWS
+practicas/10/evidencias/
+
 # Credenciales: nunca deben entrar al repositorio
 .aws/
 *.pem

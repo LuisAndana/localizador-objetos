@@ -71,7 +71,7 @@ simulador = SimuladorNodos(base)
 
 @asynccontextmanager
 async def ciclo_de_vida(_: FastAPI):
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
+    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(), format="%(levelname)s:     %(name)s - %(message)s")
     base.inicializar()
     logger.info("Base local lista en %s", RUTA_BD)
     if (DIST / "index.html").exists():

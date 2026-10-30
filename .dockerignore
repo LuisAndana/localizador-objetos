@@ -1,0 +1,46 @@
+# Archivos que NO se mandan a Docker al construir la imagen.
+
+# Credenciales y configuración local: nunca deben entrar a la imagen
+**/.env
+**/.env.*
+env.json
+*.local.json
+.aws
+**/*.pem
+**/*.key
+**/*.crt
+certs
+
+# Dependencias y compilados: se generan dentro de la imagen
+frontend/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+.venv
+venv
+.aws-sam
+
+# Datos locales: la base SQLite se crea al arrancar el contenedor
+datos_local
+**/*.db
+
+# Control de versiones y editores
+.git
+.gitignore
+.claude
+.vscode
+.idea
+
+# Lo que la app no necesita para correr
+src
+tests
+events
+firmware
+practicas
+scripts
+template.yaml
+samconfig.toml
+**/*.md
+**/*.docx
+Dockerfile
+.dockerignore

@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Borra las imagenes sin etiqueta un dia despues de subirlas",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 1
+      },
+      "action": { "type": "expire" }
+    },
+    {
+      "rulePriority": 2,
+      "description": "Borra las versiones de prueba (prueba-*) un dia despues de subirlas",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["prueba"],
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 1
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}
