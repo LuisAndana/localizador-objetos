@@ -63,7 +63,14 @@ function MenuUsuario({ email }: { email: string }) {
 
 export function AppLayout() {
   const usuario = useUsuario();
-  if (AUTENTICACION_ACTIVA && !usuario) return <InicioSesionPage />;
+  // La bienvenida es siempre la primera pantalla. En modo local (sin Cognito) no
+  // hay cuentas: "Entrar" solo abre la demostración, y al recargar vuelve a aparecer.
+  const [demoIniciada, setDemoIniciada] = useState(false);
+  if (AUTENTICACION_ACTIVA ? !usuario : !demoIniciada) {
+    return (
+      <InicioSesionPage modoDemo={!AUTENTICACION_ACTIVA} alEntrarDemo={() => setDemoIniciada(true)} />
+    );
+  }
 
   return (
     <div className="min-h-dvh">

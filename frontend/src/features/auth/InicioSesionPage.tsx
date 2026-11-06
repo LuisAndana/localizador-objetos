@@ -26,9 +26,15 @@ const TITULOS: Record<Vista["tipo"], { titulo: string; detalle: string }> = {
 };
 
 /** Pantalla de acceso: presentación de la app y, a la derecha, el paso que toque. */
-export default function InicioSesionPage() {
+export default function InicioSesionPage({
+  modoDemo = false,
+  alEntrarDemo,
+}: {
+  modoDemo?: boolean;
+  alEntrarDemo?: () => void;
+} = {}) {
   const [vista, setVista] = useState<Vista>({ tipo: "entrar" });
-  const pestanas = vista.tipo === "entrar" || vista.tipo === "registro";
+  const pestanas = !modoDemo && (vista.tipo === "entrar" || vista.tipo === "registro");
   const cabecera = TITULOS[vista.tipo];
 
   return (
@@ -76,7 +82,7 @@ export default function InicioSesionPage() {
             </div>
           )}
 
-          {!pestanas && (
+          {!pestanas && vista.tipo !== "entrar" && (
             <Button
               type="button"
               variant="ghost"
@@ -104,10 +110,21 @@ export default function InicioSesionPage() {
           {vista.tipo === "entrar" && (
             <>
               {vista.aviso && <AvisoOk mensaje={vista.aviso} />}
-              <FormularioEntrar
-                alPedirNueva={(p) => setVista({ tipo: "nueva", ...p })}
-                alRecuperar={() => setVista({ tipo: "recuperar" })}
-              />
+              {modoDemo ? (
+                <div className="grid gap-4">
+                  <p className="text-sm text-muted-foreground">
+                    Modo de prueba local: no hay cuentas ni inicio de sesión. Los datos son de demostración.
+                  </p>
+                  <Button type="button" onClick={alEntrarDemo}>
+                    Entrar a la demostración
+                  </Button>
+                </div>
+              ) : (
+                <FormularioEntrar
+                  alPedirNueva={(p) => setVista({ tipo: "nueva", ...p })}
+                  alRecuperar={() => setVista({ tipo: "recuperar" })}
+                />
+              )}
             </>
           )}
           {vista.tipo === "registro" && (
@@ -133,10 +150,12 @@ export default function InicioSesionPage() {
             />
           )}
 
-          <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
-            Conexión cifrada. Tras 5 intentos fallidos la cuenta se bloquea temporalmente. Nunca te pediremos tu
-            contraseña por correo.
-          </p>
+          {!modoDemo && (
+            <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
+              Conexión cifrada. Tras 5 intentos fallidos la cuenta se bloquea temporalmente. Nunca te pediremos tu
+              contraseña por correo.
+            </p>
+          )}
         </section>
       </main>
     </div>
