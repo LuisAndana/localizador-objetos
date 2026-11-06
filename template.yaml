@@ -38,6 +38,15 @@ Parameters:
       cliente (ej. https://app.midominio.com), nunca "*". La regla
       CorsExactoEnProduccion impide desplegar prod con "*".
 
+  DominiosRegistro:
+    Type: String
+    Default: ""
+    # Lista separada por comas, sin @ ni espacios: midominio.com,almacen.mx.
+    # Vacia = nadie puede registrarse (solo cuentas creadas por el administrador).
+    AllowedPattern: "^$|^([a-z0-9-]+\\.)+[a-z]{2,}(,([a-z0-9-]+\\.)+[a-z]{2,})*$"
+    ConstraintDescription: "Lista de dominios separados por comas, por ejemplo mamagui.com,mamagui.mx."
+    Description: Dominios de correo que pueden registrarse en la app.
+
   NivelLog:
     Type: String
     Default: INFO
@@ -321,9 +330,9 @@ Resources:
   # -------------------------------------------------------------------------
   # Usuarios (Cognito)
   # -------------------------------------------------------------------------
-  # Sin registro abierto: es la app interna de un almacen, asi que las cuentas
-  # las crea un administrador (consola o CLI) y cada usuario cambia su
-  # contrasena temporal en el primer inicio de sesion.
+  # Registro con confirmacion por correo. Solo se aceptan correos de los
+  # dominios de DominiosRegistro (ver FnValidarRegistro). Los administradores
+  # siguen pudiendo crear cuentas con contrasena temporal desde la consola.
   PoolUsuarios:
     Type: AWS::Cognito::UserPool
     DeletionPolicy: !If [EsProduccion, Retain, Delete]
@@ -333,7 +342,9 @@ Resources:
       UsernameAttributes: [email]
       AutoVerifiedAttributes: [email]
       AdminCreateUserConfig:
-        AllowAdminCreateUserOnly: true
+        AllowAdminCreateUserOnly: false
+      LambdaConfig:
+        PreSignUp: !GetAtt FnValidarRegistro.Arn
       Policies:
         PasswordPolicy:
           MinimumLength: 10
@@ -372,6 +383,26 @@ Resources:
         AccessToken: hours
         IdToken: hours
         RefreshToken: days
+
+  # Cognito llama a esta funcion antes de crear cada cuenta: si el correo no es
+  # de un dominio permitido, el registro se rechaza y no se crea nada.
+  FnValidarRegistro:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-validar-registro"
+      Description: Cognito PreSignUp - solo registra correos de los dominios permitidos.
+      CodeUri: src/validar_registro/
+      Environment:
+        Variables:
+          DOMINIOS_PERMITIDOS: !Ref DominiosRegistro
+
+  PermisoValidarRegistro:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref FnValidarRegistro
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt PoolUsuarios.Arn
 
   # Borrar objetos y gestionar categorias exige este grupo (ver autorizacion.py).
   GrupoAdministradores:

@@ -26,9 +26,13 @@ export type ResultadoInicio =
   | { tipo: "nueva_contrasena"; sesion: string; correo: string };
 
 export class ErrorSesion extends Error {
-  constructor(message: string) {
+  /** Código de error de Cognito (p. ej. "CodeMismatchException"), si lo hubo. */
+  readonly codigo?: string;
+
+  constructor(message: string, codigo?: string) {
     super(message);
     this.name = "ErrorSesion";
+    this.codigo = codigo;
   }
 }
 
@@ -105,15 +109,21 @@ export function usuarioActual(): Usuario | null {
 
 // --- Llamadas a Cognito ---------------------------------------------------------------
 
+// Los mensajes no dicen si un correo existe ni qué regla falló más allá de lo necesario.
 const MENSAJES: Record<string, string> = {
   NotAuthorizedException: "Correo o contraseña incorrectos.",
   UserNotFoundException: "Correo o contraseña incorrectos.",
   PasswordResetRequiredException: "Tu contraseña fue restablecida. Pide al administrador una nueva temporal.",
-  UserNotConfirmedException: "Tu cuenta aún no está confirmada. Avisa al administrador.",
+  UserNotConfirmedException: "Confirma tu correo antes de entrar. Revisa tu bandeja de entrada.",
   InvalidPasswordException:
     "La contraseña no cumple las reglas: al menos 10 caracteres, con mayúsculas, minúsculas y números.",
   TooManyRequestsException: "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
   LimitExceededException: "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
+  TooManyFailedAttemptsException: "Demasiados intentos fallidos. Espera unos minutos.",
+  CodeMismatchException: "El código no coincide. Revisa el correo e inténtalo de nuevo.",
+  ExpiredCodeException: "El código caducó. Pide uno nuevo.",
+  InvalidLambdaResponseException: "No se puede crear la cuenta con este correo. Usa tu correo del almacén.",
+  UnexpectedLambdaException: "No se puede crear la cuenta con este correo. Usa tu correo del almacén.",
 };
 
 async function llamarCognito<T>(accion: string, cuerpo: object): Promise<T> {
@@ -133,7 +143,7 @@ async function llamarCognito<T>(accion: string, cuerpo: object): Promise<T> {
   const datos = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const tipo = String(datos.__type ?? "").split("#").pop() ?? "";
-    throw new ErrorSesion(MENSAJES[tipo] ?? "No se pudo iniciar sesión. Inténtalo de nuevo.");
+    throw new ErrorSesion(MENSAJES[tipo] ?? "No se pudo completar la operación. Inténtalo de nuevo.", tipo);
   }
   return datos as T;
 }
@@ -179,6 +189,53 @@ export async function fijarNuevaContrasena(correo: string, sesion: string, nueva
   });
   if (!r.AuthenticationResult) throw new ErrorSesion("No se pudo cambiar la contraseña. Inicia sesión de nuevo.");
   aceptar(r.AuthenticationResult);
+}
+
+// --- Registro y recuperación ----------------------------------------------------------
+// Los dos flujos responden igual exista o no el correo (PreventUserExistenceErrors):
+// la pantalla siguiente es la misma, así nadie puede averiguar qué correos tienen cuenta.
+
+/** Crea la cuenta y manda el código por correo. Cognito solo acepta dominios permitidos. */
+export async function registrarse(correo: string, nombre: string, contrasena: string): Promise<void> {
+  try {
+    await llamarCognito("SignUp", {
+      ClientId: CLIENT_ID,
+      Username: correo,
+      Password: contrasena,
+      UserAttributes: [
+        { Name: "email", Value: correo },
+        { Name: "name", Value: nombre },
+      ],
+    });
+  } catch (err) {
+    if (err instanceof ErrorSesion && err.codigo === "UsernameExistsException") return;
+    throw err;
+  }
+}
+
+export async function confirmarRegistro(correo: string, codigo: string): Promise<void> {
+  await llamarCognito("ConfirmSignUp", { ClientId: CLIENT_ID, Username: correo, ConfirmationCode: codigo });
+}
+
+export async function reenviarCodigoRegistro(correo: string): Promise<void> {
+  await llamarCognito("ResendConfirmationCode", { ClientId: CLIENT_ID, Username: correo }).catch(() => {});
+}
+
+export async function pedirCodigoRecuperacion(correo: string): Promise<void> {
+  await llamarCognito("ForgotPassword", { ClientId: CLIENT_ID, Username: correo }).catch((err) => {
+    // Mismo mensaje y la misma pantalla que con un correo válido.
+    if (err instanceof ErrorSesion && err.codigo === "UserNotFoundException") return;
+    throw err;
+  });
+}
+
+export async function restablecerContrasena(correo: string, codigo: string, nueva: string): Promise<void> {
+  await llamarCognito("ConfirmForgotPassword", {
+    ClientId: CLIENT_ID,
+    Username: correo,
+    ConfirmationCode: codigo,
+    Password: nueva,
+  });
 }
 
 let renovando: Promise<string | null> | null = null;
